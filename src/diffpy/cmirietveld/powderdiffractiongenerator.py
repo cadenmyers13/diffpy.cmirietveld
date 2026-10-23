@@ -12,15 +12,16 @@
 # See LICENSE.rst for license information.
 #
 ##############################################################################
-"""Rietveld profile generator.
+"""Powder diffraction profile generator.
 
-The RietveldGenerator class calculates the Bragg intensity of a powder
-diffraction pattern from a crystal structure with pyobjcryst. It mirrors
-srfit's PDFGenerator, so a structure ParameterSet can be shared between
-RietveldGenerators for several datasets and a PDFGenerator.
+The PowderDiffractionGenerator class calculates the Bragg intensity of a
+powder diffraction pattern from a crystal structure with pyobjcryst. It
+mirrors srfit's PDFGenerator, so a structure ParameterSet can be shared
+between PowderDiffractionGenerators for several datasets and a
+PDFGenerator.
 """
 
-__all__ = ["RietveldGenerator"]
+__all__ = ["PowderDiffractionGenerator"]
 
 import numpy as np
 from pyobjcryst.powderpattern import PowderPattern, ReflectionProfileType
@@ -59,7 +60,7 @@ PROFILE_PARAMETER_NAMES = {
 PLACEHOLDER_TTH = np.linspace(5.0, 175.0, 1000)
 
 
-class RietveldGenerator(ProfileGenerator):
+class PowderDiffractionGenerator(ProfileGenerator):
     """Calculate the Bragg intensity of a powder pattern with
     pyobjcryst.
 
@@ -82,8 +83,9 @@ class RietveldGenerator(ProfileGenerator):
     Parameters
     ----------
     name : str, optional
-        The name of the generator (default "rietveld"). It must be a valid
-        attribute name.
+        The name of the generator (default "bragg", the name used in
+        FitContribution equations such as "bragg + background"). It must be
+        a valid attribute name.
 
     Attributes
     ----------
@@ -108,7 +110,7 @@ class RietveldGenerator(ProfileGenerator):
         The peak asymmetry terms.
     """
 
-    def __init__(self, name="rietveld"):
+    def __init__(self, name="bragg"):
         ProfileGenerator.__init__(self, name)
         self.phase = None
         self._pattern = PowderPattern()
@@ -148,7 +150,7 @@ class RietveldGenerator(ProfileGenerator):
         self.phase = phase
         self.add_parameter_set(phase)
         self._diffraction = self._pattern.AddPowderPatternDiffraction(
-            phase.stru
+            phase.structure
         )
         self._diffraction.SetReflectionProfilePar(
             ReflectionProfileType.PROFILE_PSEUDO_VOIGT

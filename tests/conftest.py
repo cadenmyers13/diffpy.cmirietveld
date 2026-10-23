@@ -53,14 +53,17 @@ def pbso4_tth():
 
 @pytest.fixture
 def pbso4_generator(pbso4_crystal):
-    """Return a RietveldGenerator for PbSO4 with Cu Kalpha1 x-rays.
+    """Return a PowderDiffractionGenerator for PbSO4 with Cu Kalpha1
+    x-rays.
 
     The peak width W is set to 0.01 degrees squared so that the peaks
     span several points of a 0.025 degree grid.
     """
-    from diffpy.cmirietveld.rietveldgenerator import RietveldGenerator
+    from diffpy.cmirietveld.powderdiffractiongenerator import (
+        PowderDiffractionGenerator,
+    )
 
-    generator = RietveldGenerator("bragg")
+    generator = PowderDiffractionGenerator("bragg")
     generator.set_wavelength(1.5406)
     generator.set_structure(pbso4_crystal)
     generator.W.set_value(0.01)

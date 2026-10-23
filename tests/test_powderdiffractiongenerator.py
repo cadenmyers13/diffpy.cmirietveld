@@ -1,4 +1,7 @@
 import re
+import subprocess
+import sys
+import warnings
 from pathlib import Path
 
 import numpy as np
@@ -6,7 +9,9 @@ import pytest
 from pyobjcryst.crystal import create_crystal_from_cif
 from pyobjcryst.powderpattern import PowderPattern, ReflectionProfileType
 
-from diffpy.cmirietveld.rietveldgenerator import RietveldGenerator
+from diffpy.cmirietveld.powderdiffractiongenerator import (
+    PowderDiffractionGenerator,
+)
 from diffpy.srfit.exceptions import SrFitError
 from diffpy.srfit.fitbase import Profile
 from diffpy.srfit.structure import struToParameterSet
@@ -31,12 +36,53 @@ def compute_pyobjcryst_pattern(crystal, tth, wavelength):
     return reference_pattern
 
 
+@pytest.mark.parametrize(
+    "input_module_name",
+    [
+        # Test that importing the generator module loads no PDF code, in a
+        # fresh interpreter so other tests' imports don't count
+        # C1: The module is checked for diffpy.srreal.
+        # Expected: diffpy.srreal is not loaded.
+        "diffpy.srreal",
+        # C2: The module is checked for srfit's PDF package.
+        # Expected: diffpy.srfit.pdf is not loaded.
+        "diffpy.srfit.pdf",
+    ],
+)
+def test_import_loads_no_pdf_code(input_module_name):
+    import_code = (
+        "import sys\n"
+        "import diffpy.cmirietveld.powderdiffractiongenerator\n"
+        f"print({input_module_name!r} in sys.modules)\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", import_code],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    actual_is_loaded = result.stdout.strip()
+    expected_is_loaded = "False"
+    assert actual_is_loaded == expected_is_loaded
+
+
+def test_default_name():
+    # Test the generator's default name
+    # C1: A generator is created without a name.
+    # Expected: Its name is "bragg", the name the FitContribution equations
+    # use.
+    generator = PowderDiffractionGenerator()
+    expected_name = "bragg"
+    actual_name = generator.name
+    assert actual_name == expected_name
+
+
 def test_parameters_before_structure():
     # Test which managed Parameters exist before a structure is set
     # C1: A generator is created and no structure is set.
     # Expected: There are no managed Parameters yet, as in srfit's
     # PDFGenerator.
-    generator = RietveldGenerator("bragg")
+    generator = PowderDiffractionGenerator("bragg")
     expected_names = []
     actual_names = generator.get_names()
     assert actual_names == expected_names
@@ -47,7 +93,7 @@ def test_parameter_names(pbso4_crystal):
     # C1: A PbSO4 structure is set on the generator.
     # Expected: Creates the scale, the instrument Parameters, and the
     # pseudo-Voigt profile Parameters including the asymmetry terms.
-    generator = RietveldGenerator("bragg")
+    generator = PowderDiffractionGenerator("bragg")
     generator.set_structure(pbso4_crystal)
     expected_names = [
         "scale",
@@ -72,7 +118,7 @@ def test_set_structure(pbso4_crystal):
     # C1: A PbSO4 Crystal is set as the structure.
     # Expected: The generator manages an ObjCrystCrystalParSet named phase
     # that adapts that Crystal.
-    generator = RietveldGenerator("bragg")
+    generator = PowderDiffractionGenerator("bragg")
     generator.set_structure(pbso4_crystal)
     actual_phase_type = type(generator.phase)
     expected_phase_type = ObjCrystCrystalParSet
@@ -80,7 +126,7 @@ def test_set_structure(pbso4_crystal):
     actual_phase_name = generator.phase.name
     expected_phase_name = "phase"
     assert actual_phase_name == expected_phase_name
-    actual_structure = generator.phase.stru
+    actual_structure = generator.phase.structure
     expected_structure = pbso4_crystal
     assert actual_structure == expected_structure
 
@@ -92,13 +138,33 @@ def test_set_structure_from_parset(pbso4_crystal):
     # structure.
     # Expected: The generator manages that same ParameterSet.
     phase = struToParameterSet("PbSO4", pbso4_crystal)
-    generator = RietveldGenerator("bragg")
+    generator = PowderDiffractionGenerator("bragg")
     generator.set_structure_from_parset(phase)
     expected_phase = phase
     actual_phase = generator.phase
     actual_managed_phase = generator.get("PbSO4")
     assert actual_phase == expected_phase
     assert actual_managed_phase == expected_phase
+
+
+def test_set_structure_without_stru_warning(pbso4_crystal):
+    # Test that setting a structure doesn't use srfit's deprecated stru
+    # C1: A ParameterSet made with struToParameterSet is set as the
+    # structure.
+    # Expected: No DeprecationWarning about BaseStructureParSet.stru is
+    # raised, because the generator reads the ParameterSet's structure.
+    phase = struToParameterSet("PbSO4", pbso4_crystal)
+    generator = PowderDiffractionGenerator("bragg")
+    with warnings.catch_warnings(record=True) as caught_warnings:
+        warnings.simplefilter("always")
+        generator.set_structure_from_parset(phase)
+    actual_stru_warnings = [
+        str(warning.message)
+        for warning in caught_warnings
+        if "BaseStructureParSet.stru'" in str(warning.message)
+    ]
+    expected_stru_warnings = []
+    assert actual_stru_warnings == expected_stru_warnings
 
 
 def test_call(pbso4_generator, pbso4_tth):
@@ -251,7 +317,7 @@ def test_validate_without_structure():
     # C1: No structure has been set.
     # Expected: Raises SrFitError saying the structure is missing and how
     # to set it.
-    generator = RietveldGenerator("bragg")
+    generator = PowderDiffractionGenerator("bragg")
     expected_msg = (
         "The generator has no structure. Please set one with "
         "set_structure or set_structure_from_parset."

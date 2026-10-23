@@ -29,12 +29,12 @@ Submodules
     :undoc-members:
     :show-inheritance:
 
-|rietveldgenerator|
--------------------
+|powderdiffractiongenerator|
+----------------------------
 
-.. |rietveldgenerator| replace:: diffpy.cmirietveld.rietveldgenerator module
+.. |powderdiffractiongenerator| replace:: diffpy.cmirietveld.powderdiffractiongenerator module
 
-.. automodule:: diffpy.cmirietveld.rietveldgenerator
+.. automodule:: diffpy.cmirietveld.powderdiffractiongenerator
     :members:
     :undoc-members:
     :show-inheritance:
