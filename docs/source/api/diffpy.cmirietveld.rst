@@ -28,3 +28,13 @@ Submodules
     :members:
     :undoc-members:
     :show-inheritance:
+
+|rietveldgenerator|
+-------------------
+
+.. |rietveldgenerator| replace:: diffpy.cmirietveld.rietveldgenerator module
+
+.. automodule:: diffpy.cmirietveld.rietveldgenerator
+    :members:
+    :undoc-members:
+    :show-inheritance:
