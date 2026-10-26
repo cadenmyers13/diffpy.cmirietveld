@@ -108,3 +108,13 @@ Submodules
     :members:
     :undoc-members:
     :show-inheritance:
+
+|powderdiffractiongenerator|
+----------------------------
+
+.. |powderdiffractiongenerator| replace:: diffpy.cmirietveld.powderdiffractiongenerator module
+
+.. automodule:: diffpy.cmirietveld.powderdiffractiongenerator
+    :members:
+    :undoc-members:
+    :show-inheritance:
