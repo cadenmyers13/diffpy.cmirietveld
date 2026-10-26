@@ -28,3 +28,83 @@ Submodules
     :members:
     :undoc-members:
     :show-inheritance:
+
+|component|
+-----------
+
+.. |component| replace:: diffpy.cmirietveld.component module
+
+.. automodule:: diffpy.cmirietveld.component
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+|profiles|
+----------
+
+.. |profiles| replace:: diffpy.cmirietveld.profiles module
+
+.. automodule:: diffpy.cmirietveld.profiles
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+|instruments|
+-------------
+
+.. |instruments| replace:: diffpy.cmirietveld.instruments module
+
+.. automodule:: diffpy.cmirietveld.instruments
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+|corrections|
+-------------
+
+.. |corrections| replace:: diffpy.cmirietveld.corrections module
+
+.. automodule:: diffpy.cmirietveld.corrections
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+|sources|
+---------
+
+.. |sources| replace:: diffpy.cmirietveld.sources module
+
+.. automodule:: diffpy.cmirietveld.sources
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+|backgrounds|
+-------------
+
+.. |backgrounds| replace:: diffpy.cmirietveld.backgrounds module
+
+.. automodule:: diffpy.cmirietveld.backgrounds
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+|data_parsers|
+--------------
+
+.. |data_parsers| replace:: diffpy.cmirietveld.data_parsers module
+
+.. automodule:: diffpy.cmirietveld.data_parsers
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+|instrument_parsers|
+--------------------
+
+.. |instrument_parsers| replace:: diffpy.cmirietveld.instrument_parsers module
+
+.. automodule:: diffpy.cmirietveld.instrument_parsers
+    :members:
+    :undoc-members:
+    :show-inheritance:

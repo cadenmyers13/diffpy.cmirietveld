@@ -5,10 +5,10 @@ from diffpy.cmirietveld.version import __version__  # noqa
 
 def main():
     parser = argparse.ArgumentParser(
-        prog="diffpy.cmirietveld",
+        prog="diffpy-cmirietveld",
         description=(
-            "A pack for diffpy.cmi that allows it to do Rietveld refinement of powder diffraction data\n\n"
-            "For more information, visit: "
+            "A pack for diffpy.cmi that allows it to do Rietveld refinement "
+            "of powder diffraction data. For more info, visit: "
             "https://github.com/diffpy/diffpy.cmirietveld/"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
