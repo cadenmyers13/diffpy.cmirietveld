@@ -85,9 +85,8 @@ class Component(ParameterSet):
         The Parameter names are mapped to the ``RefinablePar`` names
         rather than copied, so the names users see are this package's,
         independent of ObjCryst's. Some ObjCryst names are not valid
-        Parameter names (``2ThetaDispl``), and some may change when a
-        workaround is replaced (``MarchCoeff_0``); the mapping keeps such
-        changes out of users' scripts. The mapping is stored, so
+        Parameter names (``2ThetaDispl``). The mapping keeps ObjCryst
+        parameters out of refinement scripts. The mapping is stored, so
         ``push_parameters`` writes each value back to the same
         ``RefinablePar``.
 
