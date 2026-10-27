@@ -7,11 +7,11 @@ name = "diffpy.cmirietveld"
 dynamic=['version', 'dependencies']
 authors = [
   {name='Simon Billinge', email='sbillinge@ucsb.edu'},
-  {name='Caden Myers', email='cadenmyers13@columbia.edu'},
+  {name='Caden Myers', email='cjm2304@columbia.edu'},
 ]
 maintainers = [
   {name='Simon Billinge', email='sbillinge@ucsb.edu'},
-  {name='Caden Myers', email='cadenmyers13@columbia.edu'},
+  {name='Caden Myers', email='cjm2304@columbia.edu'},
 ]
 description = "A pack for diffpy.cmi that allows it to do Rietveld refinement of powder diffraction data"
 keywords = ['diffraction', 'PDF', 'X-ray', 'neutron', 'Rietveld']

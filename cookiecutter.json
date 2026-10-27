@@ -1,8 +1,8 @@
 {
   "author_names": "Simon Billinge, Caden Myers",
-  "author_emails": "sbillinge@ucsb.edu, cadenmyers13@columbia.edu",
+  "author_emails": "sbillinge@ucsb.edu, cjm2304@columbia.edu",
   "maintainer_names": "Simon Billinge, Caden Myers",
-  "maintainer_emails": "sbillinge@ucsb.edu, cadenmyers13@columbia.edu",
+  "maintainer_emails": "sbillinge@ucsb.edu, cjm2304@columbia.edu",
   "maintainer_github_usernames": "sbillinge",
   "contributors": "Caden Myers, members of the Billinge group, and contributors to the diffpy.cmirietveld project",
   "project_name": "diffpy.cmirietveld",
