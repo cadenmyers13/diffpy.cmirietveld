@@ -21,6 +21,11 @@ __all__ = [
     "BackToBackExponentialProfile",
 ]
 
+from pyobjcryst.reflectionprofile import (
+    ReflectionProfilePseudoVoigt,
+    ReflectionProfilePseudoVoigtTCH,
+)
+
 from diffpy.cmirietveld.component import Component
 
 
@@ -52,6 +57,62 @@ class PseudoVoigtProfile(PeakProfile):
         The peak asymmetry terms.
     """
 
+    def __init__(self):
+        PeakProfile.__init__(self)
+        self.create_parameters_from(
+            ReflectionProfilePseudoVoigt(),
+            {
+                "U": "U",
+                "V": "V",
+                "W": "W",
+                "eta0": "Eta0",
+                "eta1": "Eta1",
+                "asym0": "Asym0",
+                "asym1": "Asym1",
+                "asym2": "Asym2",
+            },
+        )
+
+    def install(self, pattern, diffraction):
+        """Install a fresh pyobjcryst pseudo-Voigt profile in one
+        generator.
+
+        The diffraction component gets a new
+        ``ReflectionProfilePseudoVoigt``, replacing the profile installed
+        before. Its values are set by ``update``.
+
+        Parameters
+        ----------
+        pattern : pyobjcryst.powderpattern.PowderPattern
+            The pattern of the generator.
+        diffraction : pyobjcryst.powderpattern.PowderPatternDiffraction
+            The diffraction component of the generator's structure.
+        """
+        diffraction.SetProfile(ReflectionProfilePseudoVoigt())
+
+    def update(self, pattern, diffraction):
+        """Push the Parameter values into the installed pseudo-Voigt
+        profile.
+
+        ``SetProfile`` installs a copy, so the values are written into
+        ``diffraction.GetProfile()``, not into the profile given to
+        ``SetProfile``.
+
+        Parameters
+        ----------
+        pattern : pyobjcryst.powderpattern.PowderPattern
+            The pattern of the generator.
+        diffraction : pyobjcryst.powderpattern.PowderPatternDiffraction
+            The diffraction component of the generator's structure.
+
+        Raises
+        ------
+        ValueError
+            If a Parameter value is outside the limits of its
+            ``RefinablePar``.
+        """
+        self.push_parameters(diffraction.GetProfile())
+
 
 class TCHProfile(PeakProfile):
     """Symmetric Thompson-Cox-Hastings pseudo-Voigt peak profile.
@@ -70,6 +131,60 @@ class TCHProfile(PeakProfile):
     LGmix
         The mixing of the Gaussian and Lorentzian size broadening.
     """
+
+    def __init__(self):
+        PeakProfile.__init__(self)
+        self.create_parameters_from(
+            ReflectionProfilePseudoVoigtTCH(),
+            {
+                "U": "U",
+                "V": "V",
+                "W": "W",
+                "X": "X",
+                "Y": "Y",
+                "Z": "Z",
+                "P": "P",
+                "LGmix": "LGmix",
+            },
+        )
+
+    def install(self, pattern, diffraction):
+        """Install a fresh pyobjcryst TCH profile in one generator.
+
+        The diffraction component gets a new
+        ``ReflectionProfilePseudoVoigtTCH``, replacing the profile installed
+        before. Its values are set by ``update``.
+
+        Parameters
+        ----------
+        pattern : pyobjcryst.powderpattern.PowderPattern
+            The pattern of the generator.
+        diffraction : pyobjcryst.powderpattern.PowderPatternDiffraction
+            The diffraction component of the generator's structure.
+        """
+        diffraction.SetProfile(ReflectionProfilePseudoVoigtTCH())
+
+    def update(self, pattern, diffraction):
+        """Push the Parameter values into the installed TCH profile.
+
+        ``SetProfile`` installs a copy, so the values are written into
+        ``diffraction.GetProfile()``, not into the profile given to
+        ``SetProfile``.
+
+        Parameters
+        ----------
+        pattern : pyobjcryst.powderpattern.PowderPattern
+            The pattern of the generator.
+        diffraction : pyobjcryst.powderpattern.PowderPatternDiffraction
+            The diffraction component of the generator's structure.
+
+        Raises
+        ------
+        ValueError
+            If a Parameter value is outside the limits of its
+            ``RefinablePar``.
+        """
+        self.push_parameters(diffraction.GetProfile())
 
 
 class BackToBackExponentialProfile(PeakProfile):

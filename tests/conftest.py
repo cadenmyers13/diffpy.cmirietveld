@@ -1,11 +1,15 @@
 import json
 from pathlib import Path
 
+import numpy as np
 import pytest
+from pyobjcryst.crystal import create_crystal_from_cif
+from pyobjcryst.powderpattern import PowderPattern
 from pyobjcryst.reflectionprofile import ReflectionProfilePseudoVoigt
 
 from diffpy.cmirietveld.component import Component
 
+TESTDATA_DIR = Path(__file__).parent / "testdata"
 PSEUDO_VOIGT_PARAMETER_NAMES = {
     "U": "U",
     "V": "V",
@@ -18,25 +22,44 @@ PSEUDO_VOIGT_PARAMETER_NAMES = {
 }
 
 
-@pytest.fixture
-def pseudo_voigt_profile():
-    profile = ReflectionProfilePseudoVoigt()
-    return profile
+class PbSO4Pattern:
+    """A plain pyobjcryst pattern for PbSO4, on a 16-110 degree grid at
+    1.5406 angstroms, with its diffraction component."""
+
+    def __init__(self):
+        crystal = create_crystal_from_cif(
+            str(TESTDATA_DIR / "PbSO4-Wyckoff.cif")
+        )
+        tth = np.arange(16.0, 110.0, 0.025)
+        self.pattern = PowderPattern()
+        self.pattern.SetWavelength(1.5406)
+        self.pattern.SetPowderPatternX(np.radians(tth))
+        self.pattern.SetPowderPatternObs(np.zeros_like(tth))
+        self.diffraction = self.pattern.AddPowderPatternDiffraction(crystal)
+
+    def calculate(self):
+        self.pattern.Prepare()
+        calculated_pattern = np.array(self.pattern.GetPowderPatternCalc())
+        return calculated_pattern
 
 
 @pytest.fixture
-def installed_pseudo_voigt_profile():
-    """Return a profile separate from the one the component's Parameters
-    are created from, like the copy a generator installs."""
-    profile = ReflectionProfilePseudoVoigt()
-    return profile
+def pbso4_pattern():
+    pbso4_pattern = PbSO4Pattern()
+    return pbso4_pattern
 
 
 @pytest.fixture
-def pseudo_voigt_component(pseudo_voigt_profile):
+def other_pbso4_pattern():
+    other_pbso4_pattern = PbSO4Pattern()
+    return other_pbso4_pattern
+
+
+@pytest.fixture
+def pseudo_voigt_component():
     component = Component("peak_profile")
     component.create_parameters_from(
-        pseudo_voigt_profile, PSEUDO_VOIGT_PARAMETER_NAMES
+        ReflectionProfilePseudoVoigt(), PSEUDO_VOIGT_PARAMETER_NAMES
     )
     return component
 
