@@ -1,6 +1,7 @@
 import re
 
 import pytest
+from pyobjcryst.reflectionprofile import ReflectionProfilePseudoVoigt
 
 from diffpy.cmirietveld.component import Component
 
@@ -54,7 +55,7 @@ def test_create_parameters_from_values_and_bounds(
     assert actual_bounds == expected_bounds
 
 
-def test_create_parameters_from_unknown_name(pseudo_voigt_profile):
+def test_create_parameters_from_unknown_name():
     # Test creating a Parameter from a RefinablePar the model doesn't have
     # Expected: A ValueError names the missing RefinablePar and lists the
     # names the model has.
@@ -66,11 +67,13 @@ def test_create_parameters_from_unknown_name(pseudo_voigt_profile):
     )
     bad_input = {"any_name": "nonexistent_name"}
     with pytest.raises(ValueError, match=re.escape(expected_msg)):
-        component.create_parameters_from(pseudo_voigt_profile, bad_input)
+        component.create_parameters_from(
+            ReflectionProfilePseudoVoigt(), bad_input
+        )
 
 
 @pytest.mark.parametrize(
-    "parameter_name, refinable_par_name, new_value",
+    "parameter_name, pyobjcryst_par_name, new_value",
     [
         # Test that Parameter values are pushed into a pyobjcryst model
         # other than the one the Parameters were created from
@@ -88,16 +91,13 @@ def test_create_parameters_from_unknown_name(pseudo_voigt_profile):
     ],
 )
 def test_push_parameters(
-    pseudo_voigt_component,
-    installed_pseudo_voigt_profile,
-    parameter_name,
-    refinable_par_name,
-    new_value,
+    pseudo_voigt_component, parameter_name, pyobjcryst_par_name, new_value
 ):
+    installed_profile = ReflectionProfilePseudoVoigt()
     pseudo_voigt_component.get(parameter_name).set_value(new_value)
-    pseudo_voigt_component.push_parameters(installed_pseudo_voigt_profile)
-    actual_value = installed_pseudo_voigt_profile.GetPar(
-        refinable_par_name
+    pseudo_voigt_component.push_parameters(installed_profile)
+    actual_value = installed_profile.GetPar(
+        pyobjcryst_par_name
     ).GetHumanValue()
     expected_value = new_value
     assert actual_value == pytest.approx(expected_value)
@@ -142,7 +142,6 @@ def test_push_parameters(
 )
 def test_push_parameters_outside_limits(
     pseudo_voigt_component,
-    installed_pseudo_voigt_profile,
     parameter_bounds,
     new_values,
     invalid_name,
@@ -158,9 +157,10 @@ def test_push_parameters_outside_limits(
         "within the limits, for example by passing the recipe's bounds to "
         "the optimizer: least_squares(..., bounds=recipe.get_bounds_array())."
     )
-    refinable_par_count = installed_pseudo_voigt_profile.GetNbPar()
+    installed_profile = ReflectionProfilePseudoVoigt()
+    refinable_par_count = installed_profile.GetNbPar()
     expected_values = [
-        installed_pseudo_voigt_profile.GetPar(index).GetHumanValue()
+        installed_profile.GetPar(index).GetHumanValue()
         for index in range(refinable_par_count)
     ]
     for parameter_name, bounds in parameter_bounds.items():
@@ -168,26 +168,25 @@ def test_push_parameters_outside_limits(
     for parameter_name, new_value in new_values.items():
         pseudo_voigt_component.get(parameter_name).set_value(new_value)
     with pytest.raises(ValueError, match=re.escape(expected_msg)):
-        pseudo_voigt_component.push_parameters(installed_pseudo_voigt_profile)
+        pseudo_voigt_component.push_parameters(installed_profile)
     actual_values = [
-        installed_pseudo_voigt_profile.GetPar(index).GetHumanValue()
+        installed_profile.GetPar(index).GetHumanValue()
         for index in range(refinable_par_count)
     ]
     assert actual_values == expected_values
 
 
-def test_push_parameters_outside_narrowed_bounds(
-    pseudo_voigt_component, installed_pseudo_voigt_profile
-):
+def test_push_parameters_outside_narrowed_bounds(pseudo_voigt_component):
     # Test that a value outside narrowed bounds but inside ObjCryst's
     # limits is pushed
     # Expected: W = 0.5 is outside the narrowed bounds [0, 0.1] but inside
     # ObjCryst's limits [0, 1], so the W RefinablePar has the new value.
     # Keeping a fit inside the bounds is the optimizer's job.
+    installed_profile = ReflectionProfilePseudoVoigt()
     parameter = pseudo_voigt_component.get("W")
     parameter.bound_range(0.0, 0.1)
     parameter.set_value(0.5)
-    pseudo_voigt_component.push_parameters(installed_pseudo_voigt_profile)
-    actual_value = installed_pseudo_voigt_profile.GetPar("W").GetHumanValue()
+    pseudo_voigt_component.push_parameters(installed_profile)
+    actual_value = installed_profile.GetPar("W").GetHumanValue()
     expected_value = 0.5
     assert actual_value == pytest.approx(expected_value)
