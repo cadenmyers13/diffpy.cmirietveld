@@ -43,6 +43,22 @@ class PbSO4Pattern:
         return calculated_pattern
 
 
+class NotificationCounter:
+    """An observer that counts the notifications it receives."""
+
+    def __init__(self):
+        self.count = 0
+
+    def __call__(self, semaphores):
+        self.count += 1
+
+
+@pytest.fixture
+def notification_counter():
+    notification_counter = NotificationCounter()
+    return notification_counter
+
+
 @pytest.fixture
 def pbso4_pattern():
     pbso4_pattern = PbSO4Pattern()
