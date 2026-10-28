@@ -230,7 +230,9 @@ def test_update_all_parameters(
     actual_pyobjcryst_values = {}
     for pyobjcryst_par_name in expected_pyobjcryst_values:
         parameter = installed_profile.GetPar(pyobjcryst_par_name)
-        actual_pyobjcryst_values[pyobjcryst_par_name] = parameter.GetHumanValue()
+        actual_pyobjcryst_values[pyobjcryst_par_name] = (
+            parameter.GetHumanValue()
+        )
     assert actual_pyobjcryst_values == pytest.approx(
         expected_pyobjcryst_values
     )
