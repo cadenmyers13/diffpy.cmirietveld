@@ -24,7 +24,17 @@ __all__ = [
     "TimeOfFlightInstrument",
 ]
 
+from pyobjcryst.powderpattern import PowderPattern
+from pyobjcryst.radiation import RadiationType, WavelengthType
+
 from diffpy.cmirietveld.component import Component
+from diffpy.srfit.exceptions import SrFitError
+
+RADIATION_TYPES = {
+    "X": RadiationType.RAD_XRAY,
+    "N": RadiationType.RAD_NEUTRON,
+    "E": RadiationType.RAD_ELECTRON,
+}
 
 
 class Instrument(Component):
@@ -43,6 +53,14 @@ class ConstantWavelengthInstrument(Instrument):
     """Instrument of a constant-wavelength x-ray or neutron
     diffractometer.
 
+    The wavelength has no default, because no dataset uses ObjCryst's
+    default of 1 angstrom. Set it with ``set_wavelength``,
+    ``set_xray_source`` or ``set_xray_wavelengths`` before calculating a
+    pattern. The radiation type, the Kalpha1/Kalpha2 doublet and the
+    polarization rate are settings, applied by ``install``. A doublet is
+    x-ray tube radiation, so it can only be set with the radiation type
+    "X".
+
     Managed Parameters
     ------------------
     zero
@@ -54,7 +72,40 @@ class ConstantWavelengthInstrument(Instrument):
     mu_r
         The cylinder absorption of the sample, the product of the linear
         absorption coefficient and the radius.
+    wavelength
+        The wavelength in angstroms, the intensity-weighted mean for a
+        Kalpha1/Kalpha2 doublet. It is refinable, for example to
+        calibrate an instrument against a standard.
     """
+
+    def __init__(self):
+        Instrument.__init__(self)
+        pattern = PowderPattern()
+        radiation = pattern.GetRadiation()
+        self.create_parameters_from(
+            pattern,
+            {
+                "zero": "Zero",
+                "displacement": "2ThetaDispl",
+                "transparency": "2ThetaTransp",
+                "mu_r": "MuR",
+            },
+            target="pattern",
+        )
+        self.create_parameters_from(
+            radiation, {"wavelength": "Wavelength"}, target="radiation"
+        )
+        self.wavelength.set_value(None)
+        wavelength_par = radiation.GetPar("Wavelength")
+        self._wavelength_limits = (
+            wavelength_par.GetHumanMin(),
+            wavelength_par.GetHumanMax(),
+        )
+        self._radiation_type = "X"
+        self._xray_source = None
+        self._kalpha_wavelengths = None
+        self._kalpha2_ratio = 0.5
+        self._polarization_rate = 0.0
 
     def set_radiation_type(self, radiation_type):
         """Set the radiation type.
@@ -64,31 +115,140 @@ class ConstantWavelengthInstrument(Instrument):
         radiation_type : str
             The radiation type: "X" for x-rays, "N" for neutrons or "E" for
             electrons.
+
+        Raises
+        ------
+        ValueError
+            If the radiation type is not one of "X", "N" or "E", or it is
+            "N" or "E" while a Kalpha1/Kalpha2 doublet is set.
         """
-        raise NotImplementedError
+        if radiation_type not in RADIATION_TYPES:
+            raise ValueError(
+                f"'{radiation_type}' is not a supported radiation type. "
+                "Please use 'X' for x-rays, 'N' for neutrons or 'E' for "
+                "electrons."
+            )
+        has_doublet = (
+            self._xray_source is not None
+            or self._kalpha_wavelengths is not None
+        )
+        if radiation_type != "X" and has_doublet:
+            raise ValueError(
+                f"The radiation type '{radiation_type}' can't be used with "
+                "the Kalpha1/Kalpha2 doublet that is set, which needs x-rays. "
+                "Please set a single wavelength with set_wavelength first."
+            )
+        self._radiation_type = radiation_type
+        self.mark_settings_changed()
 
     def set_wavelength(self, wavelength):
         """Set a single wavelength.
+
+        This sets the ``wavelength`` Parameter and replaces a
+        Kalpha1/Kalpha2 doublet set before. ObjCryst limits the wavelength
+        to 0.05 to 20 angstroms, which leaves out the electrons of beams
+        faster than about 50 kV.
 
         Parameters
         ----------
         wavelength : float
             The wavelength in angstroms.
-        """
-        raise NotImplementedError
 
-    def set_xray_tube(self, element, kalpha2_ratio=0.5):
+        Raises
+        ------
+        ValueError
+            If the wavelength is outside ObjCryst's limits of 0.05 to 20
+            angstroms.
+        """
+        self._check_wavelength_limits(wavelength)
+        self._xray_source = None
+        self._kalpha_wavelengths = None
+        self.wavelength.set_value(wavelength)
+        self.mark_settings_changed()
+
+    def set_xray_source(self, element, kalpha2_ratio=0.5):
         """Set the wavelengths of an x-ray tube's Kalpha1/Kalpha2
         doublet.
+
+        The wavelengths are ObjCryst's tabulated ones for the anode
+        element. The ``wavelength`` Parameter is set to their
+        intensity-weighted mean.
 
         Parameters
         ----------
         element : str
-            The anode element, for example "Cu" or "Mo".
+            The anode element: "Ag", "Co", "Cr", "Cu", "Fe" or "Mo", the
+            ones ObjCryst has wavelengths for.
         kalpha2_ratio : float, optional
             The intensity ratio of Kalpha2 to Kalpha1 (default 0.5).
+
+        Raises
+        ------
+        ValueError
+            If ObjCryst has no tabulated wavelengths for the element, or
+            the radiation type is not "X".
         """
-        raise NotImplementedError
+        self._check_xray_radiation()
+        # ObjCryst only prints a warning for an unknown element and keeps
+        # its wavelength, so an unchanged wavelength means it was unknown
+        tube_pattern = PowderPattern()
+        tube_radiation = tube_pattern.GetRadiation()
+        default_wavelength = tube_radiation.GetWavelength()
+        tube_pattern.SetWavelength(element, kalpha2_ratio)
+        mean_wavelength = tube_radiation.GetWavelength()
+        if mean_wavelength == default_wavelength:
+            raise ValueError(
+                f"ObjCryst has no x-ray tube wavelengths for '{element}'. "
+                "Please use one of the anode elements it has, 'Ag', 'Co', "
+                "'Cr', 'Cu', 'Fe' or 'Mo', or set the wavelengths with "
+                "set_xray_wavelengths."
+            )
+        self._xray_source = element
+        self._kalpha_wavelengths = None
+        self._kalpha2_ratio = kalpha2_ratio
+        self.wavelength.set_value(mean_wavelength)
+        self.mark_settings_changed()
+
+    def set_xray_wavelengths(self, kalpha1, kalpha2, kalpha2_ratio=0.5):
+        """Set the wavelengths of a Kalpha1/Kalpha2 doublet explicitly.
+
+        This replaces ObjCryst's tabulated tube wavelengths, for example
+        with the calibrated ones of an instrument parameter file. The
+        ``wavelength`` Parameter is set to their intensity-weighted mean.
+
+        Parameters
+        ----------
+        kalpha1 : float
+            The Kalpha1 wavelength in angstroms.
+        kalpha2 : float
+            The Kalpha2 wavelength in angstroms.
+        kalpha2_ratio : float, optional
+            The intensity ratio of Kalpha2 to Kalpha1 (default 0.5).
+
+        Raises
+        ------
+        ValueError
+            If a wavelength is outside ObjCryst's limits of 0.05 to 20
+            angstroms, Kalpha2 is not longer than Kalpha1, or the
+            radiation type is not "X".
+        """
+        self._check_xray_radiation()
+        self._check_wavelength_limits(kalpha1)
+        self._check_wavelength_limits(kalpha2)
+        if kalpha2 <= kalpha1:
+            raise ValueError(
+                f"Kalpha2, {kalpha2} angstroms, is not longer than Kalpha1, "
+                f"{kalpha1} angstroms. Please give the wavelengths in the "
+                "order kalpha1, kalpha2."
+            )
+        mean_wavelength = kalpha1 + (kalpha2 - kalpha1) * kalpha2_ratio / (
+            1 + kalpha2_ratio
+        )
+        self._xray_source = None
+        self._kalpha_wavelengths = (kalpha1, kalpha2)
+        self._kalpha2_ratio = kalpha2_ratio
+        self.wavelength.set_value(mean_wavelength)
+        self.mark_settings_changed()
 
     def set_polarization(self, polarization_rate):
         """Set the polarization rate of the x-ray beam.
@@ -96,9 +256,107 @@ class ConstantWavelengthInstrument(Instrument):
         Parameters
         ----------
         polarization_rate : float
-            The polarization rate used by ObjCryst, from -1 to 1.
+            The polarization rate f used by ObjCryst, from -1 to 1. An
+            unpolarized beam has f = 0. For a GSAS-style polarization P,
+            f = 2P - 1.
+
+        Raises
+        ------
+        ValueError
+            If the rate is outside [-1, 1].
         """
-        raise NotImplementedError
+        if not -1 <= polarization_rate <= 1:
+            raise ValueError(
+                f"The polarization rate {polarization_rate} is outside "
+                "[-1, 1]. Please give ObjCryst's rate f; for a GSAS "
+                "polarization P, f = 2P - 1."
+            )
+        self._polarization_rate = polarization_rate
+        self.mark_settings_changed()
+
+    def install(self, pattern, diffraction):
+        """Set the radiation, wavelengths and polarization of one
+        generator.
+
+        The radiation type is set first, then the wavelength or the
+        Kalpha1/Kalpha2 doublet, then the polarization rate, and the
+        pattern is prepared last. ObjCryst resets the rate when a tube is
+        set, and only recalculates for a new rate after the wavelength is
+        set again, so this order is what makes a change to any setting
+        take effect. The ``wavelength`` value itself is set by ``update``.
+
+        Parameters
+        ----------
+        pattern : pyobjcryst.powderpattern.PowderPattern
+            The pattern of the generator.
+        diffraction : pyobjcryst.powderpattern.PowderPatternDiffraction
+            The diffraction component of the generator's structure.
+        """
+        radiation = pattern.GetRadiation()
+        pattern.SetRadiationType(RADIATION_TYPES[self._radiation_type])
+        if self._xray_source is not None:
+            pattern.SetWavelength(self._xray_source, self._kalpha2_ratio)
+        elif self._kalpha_wavelengths is not None:
+            # Only SetWavelength(element, ratio) sets a ratio other than
+            # 0.5, so a tube sets up the doublet, and its Kalpha2 - Kalpha1
+            # is replaced
+            kalpha1, kalpha2 = self._kalpha_wavelengths
+            pattern.SetWavelength("Cu", self._kalpha2_ratio)
+            delta_lambda_par = radiation.GetPar("XRayTubeDeltaLambda")
+            delta_lambda_par.SetHumanValue(kalpha2 - kalpha1)
+        else:
+            pattern.SetWavelength(self.wavelength.value)
+            # SetWavelength(wavelength) keeps a doublet set before
+            radiation.SetWavelengthType(
+                WavelengthType.WAVELENGTH_MONOCHROMATIC
+            )
+        radiation.SetLinearPolarRate(self._polarization_rate)
+        pattern.Prepare()
+
+    def update(self, pattern, diffraction):
+        """Push the Parameter values into the pattern and its radiation.
+
+        Parameters
+        ----------
+        pattern : pyobjcryst.powderpattern.PowderPattern
+            The pattern of the generator.
+        diffraction : pyobjcryst.powderpattern.PowderPatternDiffraction
+            The diffraction component of the generator's structure.
+
+        Raises
+        ------
+        ValueError
+            If a Parameter value is outside the limits of its
+            ``RefinablePar``.
+        """
+        self.push_parameters(pattern, target="pattern")
+        self.push_parameters(pattern.GetRadiation(), target="radiation")
+
+    def _validate(self):
+        if self.wavelength.value is None:
+            raise SrFitError(
+                "The instrument has no wavelength. Please set one with "
+                "set_wavelength, set_xray_source or set_xray_wavelengths."
+            )
+        Instrument._validate(self)
+
+    def _check_xray_radiation(self):
+        if self._radiation_type != "X":
+            raise ValueError(
+                "A Kalpha1/Kalpha2 doublet needs x-rays, but the radiation "
+                f"type is '{self._radiation_type}'. Please set the radiation "
+                "type to 'X' first, or set a single wavelength with "
+                "set_wavelength."
+            )
+
+    def _check_wavelength_limits(self, wavelength):
+        lower_limit, upper_limit = self._wavelength_limits
+        if not lower_limit <= wavelength <= upper_limit:
+            raise ValueError(
+                f"The wavelength {wavelength} angstroms is outside "
+                f"ObjCryst's limits of {lower_limit:g} to {upper_limit:g} "
+                "angstroms. Please give a wavelength within these limits."
+            )
 
 
 class TimeOfFlightInstrument(Instrument):

@@ -107,8 +107,8 @@ class Component(ParameterSet):
         --------
         A setting method of an instrument:
 
-        >>> def set_xray_tube(self, element):
-        ...     self._xray_tube = element
+        >>> def set_xray_source(self, element):
+        ...     self._xray_source = element
         ...     self.mark_settings_changed()
         """
         self._settings_version += 1
