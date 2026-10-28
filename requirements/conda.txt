@@ -1,2 +1,3 @@
 numpy
 diffpy.srfit
+pyobjcryst

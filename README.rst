@@ -129,7 +129,7 @@ Before contributing, please read our `Code of Conduct <https://github.com/diffpy
 Contact
 -------
 
-For more information on diffpy.cmirietveld please visit the project `web-page <https://diffpy.github.io/>`_ or email the maintainers ``Simon Billinge(sbillinge@ucsb.edu) and Caden Myers(cadenmyers13@columbia.edu)``.
+For more information on diffpy.cmirietveld please visit the project `web-page <https://diffpy.github.io/>`_ or email the maintainers ``Simon Billinge(sbillinge@ucsb.edu) and Caden Myers(cjm2304@columbia.edu)``.
 
 Acknowledgements
 ----------------
