@@ -227,12 +227,10 @@ def test_update_all_parameters(
     profile.update(pbso4_pattern.pattern, pbso4_pattern.diffraction)
     # Read every value back from the installed pyobjcryst profile
     installed_profile = pbso4_pattern.diffraction.GetProfile()
-    actual_pyobjcryst_values = {
-        pyobjcryst_par_name: installed_profile.GetPar(
-            pyobjcryst_par_name
-        ).GetHumanValue()
-        for pyobjcryst_par_name in expected_pyobjcryst_values
-    }
+    actual_pyobjcryst_values = {}
+    for pyobjcryst_par_name in expected_pyobjcryst_values:
+        parameter = installed_profile.GetPar(pyobjcryst_par_name)
+        actual_pyobjcryst_values[pyobjcryst_par_name] = parameter.GetHumanValue()
     assert actual_pyobjcryst_values == pytest.approx(
         expected_pyobjcryst_values
     )
