@@ -1,4 +1,5 @@
 import re
+import warnings
 
 import numpy as np
 import pytest
@@ -183,6 +184,263 @@ def test_settings_version_after_setter(setter_name, setter_args):
 
 
 @pytest.mark.parametrize(
+    "setter_name, first_args, refined_wavelength, second_args, expected_msg",
+    [
+        # Test that a setter warns when it replaces a wavelength refined
+        # since it was last called, so a calibration isn't lost without the
+        # user knowing
+        # C1: A user sets the wavelength to the synchrotron's wavelength of
+        # 0.4592 angstroms, refines it to 0.45903 against a calibrant,
+        # then reruns the setup cell of their script, which sets 0.4592
+        # again.
+        # Expected: A UserWarning says that the refined 0.45903 was
+        # replaced by 0.4592, and how to keep it.
+        (
+            "set_wavelength",
+            [0.4592],
+            0.45903,
+            [0.4592],
+            "set_wavelength replaced the wavelength 0.45903 angstroms, which "
+            "was refined or set by hand, with 0.4592 angstroms. To keep "
+            "0.45903 angstroms, set instrument.wavelength again after "
+            "set_wavelength.",
+        ),
+        # C2: A user sets a Cu tube, refines the wavelength to 1.5422
+        # angstroms against a calibrant, then sets the tube again with a
+        # different Kalpha2/Kalpha1 ratio.
+        # Expected: A UserWarning says that the refined 1.5422 was replaced
+        # by the tube's mean for that ratio, 1.54175, and how to keep it.
+        (
+            "set_xray_source",
+            ["Cu"],
+            1.5422,
+            ["Cu", 0.45],
+            "set_xray_source replaced the wavelength 1.5422 angstroms, which "
+            "was refined or set by hand, with 1.54175 angstroms. To keep "
+            "1.5422 angstroms, set instrument.wavelength again after "
+            "set_xray_source.",
+        ),
+        # C3: A user sets their own Kalpha1 and Kalpha2 wavelengths, refines
+        # the wavelength to 1.5422 angstroms against a calibrant, then
+        # reruns the setup cell of their script, which sets the same
+        # wavelengths again.
+        # Expected: A UserWarning says that the refined 1.5422 was replaced
+        # by the mean of the two wavelengths, 1.54184, and how to keep it.
+        (
+            "set_xray_wavelengths",
+            [CU_KALPHA1, CU_KALPHA2],
+            1.5422,
+            [CU_KALPHA1, CU_KALPHA2],
+            "set_xray_wavelengths replaced the wavelength 1.5422 angstroms, "
+            "which was refined or set by hand, with 1.54184 angstroms. To "
+            "keep 1.5422 angstroms, set instrument.wavelength again after "
+            "set_xray_wavelengths.",
+        ),
+    ],
+)
+def test_setter_warns_wavelength_replaced(
+    setter_name, first_args, refined_wavelength, second_args, expected_msg
+):
+    # Set up the instrument's wavelength
+    instrument = ConstantWavelengthInstrument()
+    getattr(instrument, setter_name)(*first_args)
+    # Refine the wavelength against the calibrant, here set by hand
+    instrument.wavelength.set_value(refined_wavelength)
+    # Call the setter again
+    with pytest.warns(UserWarning, match=re.escape(expected_msg)):
+        getattr(instrument, setter_name)(*second_args)
+
+
+@pytest.mark.parametrize(
+    "first_setter_name, first_args, second_setter_name, second_args, "
+    "expected_msg",
+    [
+        # Test that a setter warns when it replaces a Kalpha1/Kalpha2
+        # doublet set by another setter, so the doublet isn't lost without
+        # the user knowing
+        # C1: A user sets a Cu tube, then changes their mind and sets a
+        # single wavelength of 1.5406 angstroms.
+        # Expected: A UserWarning says that the Cu doublet was replaced by
+        # a single wavelength, and how to use the doublet again.
+        (
+            "set_xray_source",
+            ["Cu"],
+            "set_wavelength",
+            [1.5406],
+            "set_wavelength replaced the Cu Kalpha1/Kalpha2 doublet with a "
+            "single wavelength. To use the doublet again, call "
+            "set_xray_source.",
+        ),
+        # C2: A user sets their own Kalpha1 and Kalpha2 wavelengths, then
+        # changes their mind and sets a single wavelength of 1.5406
+        # angstroms.
+        # Expected: A UserWarning says that the doublet was replaced by a
+        # single wavelength, and how to use the doublet again.
+        (
+            "set_xray_wavelengths",
+            [CU_KALPHA1, CU_KALPHA2],
+            "set_wavelength",
+            [1.5406],
+            "set_wavelength replaced the explicit Kalpha1/Kalpha2 doublet "
+            "with a single wavelength. To use the doublet again, call "
+            "set_xray_wavelengths.",
+        ),
+        # C3: A user sets a Cu tube, then sets their own Kalpha1 and Kalpha2
+        # wavelengths instead.
+        # Expected: A UserWarning says that the Cu doublet was replaced,
+        # and how to use it again.
+        (
+            "set_xray_source",
+            ["Cu"],
+            "set_xray_wavelengths",
+            [CU_KALPHA1, CU_KALPHA2],
+            "set_xray_wavelengths replaced the Cu Kalpha1/Kalpha2 doublet "
+            "with the explicit wavelengths. To use the Cu doublet again, "
+            "call set_xray_source.",
+        ),
+        # C4: A user sets their own Kalpha1 and Kalpha2 wavelengths, then
+        # copies in code from another script that sets a Cu tube.
+        # Expected: A UserWarning says that their wavelengths were replaced
+        # by the Cu doublet, and how to use them again.
+        (
+            "set_xray_wavelengths",
+            [CU_KALPHA1, CU_KALPHA2],
+            "set_xray_source",
+            ["Cu"],
+            "set_xray_source replaced the explicit Kalpha1/Kalpha2 doublet "
+            "with the Cu doublet. To use the explicit wavelengths again, call "
+            "set_xray_wavelengths.",
+        ),
+    ],
+)
+def test_setter_warns_doublet_replaced(
+    first_setter_name,
+    first_args,
+    second_setter_name,
+    second_args,
+    expected_msg,
+):
+    instrument = ConstantWavelengthInstrument()
+    getattr(instrument, first_setter_name)(*first_args)
+    with pytest.warns(UserWarning, match=re.escape(expected_msg)):
+        getattr(instrument, second_setter_name)(*second_args)
+
+
+@pytest.mark.parametrize(
+    "first_setter_name, first_args, second_setter_name, second_args, "
+    "expected_msg",
+    [
+        # Test that a polarization rate warns when it has no effect, since
+        # ObjCryst only applies it to x-rays
+        # C1: A user sets up a neutron instrument, then copies in a
+        # polarization rate of 0.95 from their x-ray script.
+        # Expected: A UserWarning says that the rate does nothing with
+        # neutrons.
+        (
+            "set_radiation_type",
+            ["N"],
+            "set_polarization",
+            [0.95],
+            "The polarization rate 0.95 has no effect with the radiation type "
+            "'N', because ObjCryst only applies it to x-rays. Please set a "
+            "polarization rate only for x-ray data.",
+        ),
+        # C2: A user sets a polarization rate of 0.95 for their x-ray data,
+        # then switches the instrument to neutrons.
+        # Expected: A UserWarning says that the rate now does nothing.
+        (
+            "set_polarization",
+            [0.95],
+            "set_radiation_type",
+            ["N"],
+            "The polarization rate 0.95 has no effect with the radiation type "
+            "'N', because ObjCryst only applies it to x-rays. Please set a "
+            "polarization rate only for x-ray data.",
+        ),
+        # C3: A user sets a polarization rate of 0.95, then switches the
+        # instrument to electrons.
+        # Expected: A UserWarning says that the rate now does nothing.
+        (
+            "set_polarization",
+            [0.95],
+            "set_radiation_type",
+            ["E"],
+            "The polarization rate 0.95 has no effect with the radiation type "
+            "'E', because ObjCryst only applies it to x-rays. Please set a "
+            "polarization rate only for x-ray data.",
+        ),
+    ],
+)
+def test_polarization_warns_without_xrays(
+    first_setter_name,
+    first_args,
+    second_setter_name,
+    second_args,
+    expected_msg,
+):
+    instrument = ConstantWavelengthInstrument()
+    getattr(instrument, first_setter_name)(*first_args)
+    with pytest.warns(UserWarning, match=re.escape(expected_msg)):
+        getattr(instrument, second_setter_name)(*second_args)
+
+
+@pytest.mark.parametrize(
+    "first_setter_name, first_args, second_setter_name, second_args",
+    [
+        # Test that the setters stay silent when a user changes their own
+        # setup before refining, so the warnings only appear when something
+        # the user may still expect is lost
+        # C1: A user sets a Cu tube, then switches to a Mo tube before
+        # refining.
+        # Expected: No warning, because the wavelength replaced is the Cu
+        # tube's, not a refined one.
+        ("set_xray_source", ["Cu"], "set_xray_source", ["Mo"]),
+        # C2: A user sets the synchrotron's wavelength of 0.4592 angstroms,
+        # then corrects it to 0.45917 before refining.
+        # Expected: No warning, because the wavelength replaced is the one
+        # the user set.
+        ("set_wavelength", [0.4592], "set_wavelength", [0.45917]),
+        # C3: A user sets a single wavelength of 1.5406 angstroms, then
+        # switches to a Cu tube.
+        # Expected: No warning, because no doublet is replaced.
+        ("set_wavelength", [1.5406], "set_xray_source", ["Cu"]),
+        # C4: A user sets a single wavelength of 1.5406 angstroms, then
+        # switches to their own Kalpha1 and Kalpha2 wavelengths.
+        # Expected: No warning, because no doublet is replaced.
+        (
+            "set_wavelength",
+            [1.5406],
+            "set_xray_wavelengths",
+            [CU_KALPHA1, CU_KALPHA2],
+        ),
+        # C5: A user sets a Cu tube, then a polarization rate of 0.95.
+        # Expected: No warning, because the rate applies to x-rays.
+        ("set_xray_source", ["Cu"], "set_polarization", [0.95]),
+        # C6: A user sets up a neutron instrument and leaves the
+        # polarization at 0.
+        # Expected: No warning, because a rate of 0 changes nothing.
+        ("set_radiation_type", ["N"], "set_polarization", [0.0]),
+    ],
+)
+def test_setter_without_warning(
+    first_setter_name, first_args, second_setter_name, second_args
+):
+    # Record every warning from the first setter call, which replaces no
+    # wavelength, and from the second
+    instrument = ConstantWavelengthInstrument()
+    with warnings.catch_warnings(record=True) as caught_warnings:
+        warnings.simplefilter("always")
+        getattr(instrument, first_setter_name)(*first_args)
+        getattr(instrument, second_setter_name)(*second_args)
+    actual_warning_messages = []
+    for caught_warning in caught_warnings:
+        if issubclass(caught_warning.category, UserWarning):
+            actual_warning_messages.append(str(caught_warning.message))
+    expected_warning_messages = []
+    assert actual_warning_messages == expected_warning_messages
+
+
+@pytest.mark.parametrize(
     "parameter_name, pyobjcryst_par_name, new_value",
     [
         # Test that update pushes the pattern Parameters into the pattern
@@ -324,6 +582,9 @@ def test_install_radiation_type(
     assert actual_radiation_type == expected_radiation_type
 
 
+# The doublet-replaced warning is tested in
+# test_setter_warns_doublet_replaced
+@pytest.mark.filterwarnings("ignore::UserWarning")
 def test_install_neutrons_after_tube(pbso4_pattern, other_pbso4_pattern):
     # Test switching an installed x-ray tube instrument to neutrons
     # Expected: The pattern equals a pyobjcryst pattern set directly to
@@ -466,6 +727,9 @@ def test_install_polarization_rate_at_range_edges(
     )
 
 
+# The doublet-replaced warning is tested in
+# test_setter_warns_doublet_replaced
+@pytest.mark.filterwarnings("ignore::UserWarning")
 def test_install_single_wavelength_after_tube(
     pbso4_pattern, other_pbso4_pattern
 ):
@@ -547,6 +811,70 @@ def test_install_xray_wavelengths(
     other_pbso4_pattern.pattern.SetWavelength("Cu", kalpha2_ratio)
     expected_pattern = other_pbso4_pattern.calculate()
     assert np.allclose(actual_pattern, expected_pattern)
+
+
+# The doublet-replaced warnings of C3 and C4 are tested in
+# test_setter_warns_doublet_replaced
+@pytest.mark.filterwarnings("ignore::UserWarning")
+@pytest.mark.parametrize(
+    "first_setter_name, first_args, second_setter_name, second_args, "
+    "expected_kalpha2_ratio",
+    [
+        # Test that the Kalpha2/Kalpha1 ratio is kept when a user changes
+        # the doublet without giving a ratio, so it doesn't fall back to 0.5
+        # without the user knowing
+        # C1: A user sets a Cu tube, then switches to a Mo tube, without
+        # giving a ratio either time.
+        # Expected: The ratio is 0.5, the starting ratio.
+        ("set_xray_source", ["Cu"], "set_xray_source", ["Mo"], 0.5),
+        # C2: A user sets a Cu tube with a ratio of 0.45, then switches to a
+        # Mo tube.
+        # Expected: The ratio is still 0.45.
+        ("set_xray_source", ["Cu", 0.45], "set_xray_source", ["Mo"], 0.45),
+        # C3: A user sets a Cu tube with a ratio of 0.45, then switches to
+        # their own Kalpha1 and Kalpha2 wavelengths.
+        # Expected: The ratio is still 0.45.
+        (
+            "set_xray_source",
+            ["Cu", 0.45],
+            "set_xray_wavelengths",
+            [CU_KALPHA1, CU_KALPHA2],
+            0.45,
+        ),
+        # C4: A user sets their own Kalpha1 and Kalpha2 wavelengths with a
+        # ratio of 0.45, then switches to a Cu tube.
+        # Expected: The ratio is still 0.45.
+        (
+            "set_xray_wavelengths",
+            [CU_KALPHA1, CU_KALPHA2, 0.45],
+            "set_xray_source",
+            ["Cu"],
+            0.45,
+        ),
+        # C5: A user sets a Cu tube with a ratio of 0.45, then sets it again
+        # with a ratio of 0.4.
+        # Expected: The ratio is 0.4, the one given last.
+        ("set_xray_source", ["Cu", 0.45], "set_xray_source", ["Cu", 0.4], 0.4),
+    ],
+)
+def test_install_kalpha2_ratio_kept(
+    pbso4_pattern,
+    first_setter_name,
+    first_args,
+    second_setter_name,
+    second_args,
+    expected_kalpha2_ratio,
+):
+    # Set the first doublet, then change it
+    instrument = ConstantWavelengthInstrument()
+    getattr(instrument, first_setter_name)(*first_args)
+    getattr(instrument, second_setter_name)(*second_args)
+    # Install it and read the ratio ObjCryst uses
+    instrument.install(pbso4_pattern.pattern, pbso4_pattern.diffraction)
+    radiation = pbso4_pattern.pattern.GetRadiation()
+    ratio_par = radiation.GetPar("XRayTubeAlpha2Alpha1Ratio")
+    actual_kalpha2_ratio = ratio_par.GetHumanValue()
+    assert actual_kalpha2_ratio == pytest.approx(expected_kalpha2_ratio)
 
 
 def test_set_xray_source_unknown_element():

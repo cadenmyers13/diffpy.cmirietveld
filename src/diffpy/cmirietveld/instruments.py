@@ -24,6 +24,8 @@ __all__ = [
     "TimeOfFlightInstrument",
 ]
 
+import warnings
+
 from pyobjcryst.powderpattern import PowderPattern
 from pyobjcryst.radiation import RadiationType, WavelengthType
 
@@ -60,6 +62,10 @@ class ConstantWavelengthInstrument(Instrument):
     polarization rate are settings, applied by ``install``. A doublet is
     x-ray tube radiation, so it can only be set with the radiation type
     "X".
+
+    The wavelength setters warn when they discard something the user may
+    still expect: a wavelength refined or set by hand since the last
+    setter call, or a Kalpha1/Kalpha2 doublet set by another setter.
 
     Managed Parameters
     ------------------
@@ -106,6 +112,7 @@ class ConstantWavelengthInstrument(Instrument):
         self._kalpha_wavelengths = None
         self._kalpha2_ratio = 0.5
         self._polarization_rate = 0.0
+        self._last_set_wavelength = None
 
     def set_radiation_type(self, radiation_type):
         """Set the radiation type.
@@ -121,6 +128,12 @@ class ConstantWavelengthInstrument(Instrument):
         ValueError
             If the radiation type is not one of "X", "N" or "E", or it is
             "N" or "E" while a Kalpha1/Kalpha2 doublet is set.
+
+        Warns
+        -----
+        UserWarning
+            If it is "N" or "E" while a polarization rate other than 0
+            is set, since ObjCryst only applies the rate to x-rays.
         """
         if radiation_type not in RADIATION_TYPES:
             raise ValueError(
@@ -138,6 +151,9 @@ class ConstantWavelengthInstrument(Instrument):
                 "the Kalpha1/Kalpha2 doublet that is set, which needs x-rays. "
                 "Please set a single wavelength with set_wavelength first."
             )
+        self._warn_if_polarization_unused(
+            self._polarization_rate, radiation_type
+        )
         self._radiation_type = radiation_type
         self.mark_settings_changed()
 
@@ -159,14 +175,38 @@ class ConstantWavelengthInstrument(Instrument):
         ValueError
             If the wavelength is outside ObjCryst's limits of 0.05 to 20
             angstroms.
+
+        Warns
+        -----
+        UserWarning
+            If it replaces a wavelength refined or set by hand since the
+            last setter call, or a Kalpha1/Kalpha2 doublet.
         """
         self._check_wavelength_limits(wavelength)
+        if self._xray_source is not None:
+            warnings.warn(
+                "set_wavelength replaced the "
+                f"{self._xray_source} Kalpha1/Kalpha2 doublet with a "
+                "single wavelength. To use the doublet again, call "
+                "set_xray_source.",
+                UserWarning,
+                stacklevel=2,
+            )
+        elif self._kalpha_wavelengths is not None:
+            warnings.warn(
+                "set_wavelength replaced the explicit Kalpha1/Kalpha2 "
+                "doublet with a single wavelength. To use the doublet "
+                "again, call set_xray_wavelengths.",
+                UserWarning,
+                stacklevel=2,
+            )
+        self._warn_if_wavelength_replaced("set_wavelength", wavelength)
         self._xray_source = None
         self._kalpha_wavelengths = None
-        self.wavelength.set_value(wavelength)
+        self._set_wavelength_value(wavelength)
         self.mark_settings_changed()
 
-    def set_xray_source(self, element, kalpha2_ratio=0.5):
+    def set_xray_source(self, element, kalpha2_ratio=None):
         """Set the wavelengths of an x-ray tube's Kalpha1/Kalpha2
         doublet.
 
@@ -180,15 +220,25 @@ class ConstantWavelengthInstrument(Instrument):
             The anode element: "Ag", "Co", "Cr", "Cu", "Fe" or "Mo", the
             ones ObjCryst has wavelengths for.
         kalpha2_ratio : float, optional
-            The intensity ratio of Kalpha2 to Kalpha1 (default 0.5).
+            The intensity ratio of Kalpha2 to Kalpha1. If it isn't given,
+            the ratio set before is kept, which is 0.5 until one is given.
 
         Raises
         ------
         ValueError
             If ObjCryst has no tabulated wavelengths for the element, or
             the radiation type is not "X".
+
+        Warns
+        -----
+        UserWarning
+            If it replaces a wavelength refined or set by hand since the
+            last setter call, or a doublet set with
+            ``set_xray_wavelengths``.
         """
         self._check_xray_radiation()
+        if kalpha2_ratio is None:
+            kalpha2_ratio = self._kalpha2_ratio
         # ObjCryst only prints a warning for an unknown element and keeps
         # its wavelength, so an unchanged wavelength means it was unknown
         tube_pattern = PowderPattern()
@@ -203,13 +253,22 @@ class ConstantWavelengthInstrument(Instrument):
                 "'Cr', 'Cu', 'Fe' or 'Mo', or set the wavelengths with "
                 "set_xray_wavelengths."
             )
+        if self._kalpha_wavelengths is not None:
+            warnings.warn(
+                "set_xray_source replaced the explicit Kalpha1/Kalpha2 "
+                f"doublet with the {element} doublet. To use the explicit "
+                "wavelengths again, call set_xray_wavelengths.",
+                UserWarning,
+                stacklevel=2,
+            )
+        self._warn_if_wavelength_replaced("set_xray_source", mean_wavelength)
         self._xray_source = element
         self._kalpha_wavelengths = None
         self._kalpha2_ratio = kalpha2_ratio
-        self.wavelength.set_value(mean_wavelength)
+        self._set_wavelength_value(mean_wavelength)
         self.mark_settings_changed()
 
-    def set_xray_wavelengths(self, kalpha1, kalpha2, kalpha2_ratio=0.5):
+    def set_xray_wavelengths(self, kalpha1, kalpha2, kalpha2_ratio=None):
         """Set the wavelengths of a Kalpha1/Kalpha2 doublet explicitly.
 
         This replaces ObjCryst's tabulated tube wavelengths, for example
@@ -223,7 +282,8 @@ class ConstantWavelengthInstrument(Instrument):
         kalpha2 : float
             The Kalpha2 wavelength in angstroms.
         kalpha2_ratio : float, optional
-            The intensity ratio of Kalpha2 to Kalpha1 (default 0.5).
+            The intensity ratio of Kalpha2 to Kalpha1. If it isn't given,
+            the ratio set before is kept, which is 0.5 until one is given.
 
         Raises
         ------
@@ -231,6 +291,12 @@ class ConstantWavelengthInstrument(Instrument):
             If a wavelength is outside ObjCryst's limits of 0.05 to 20
             angstroms, Kalpha2 is not longer than Kalpha1, or the
             radiation type is not "X".
+
+        Warns
+        -----
+        UserWarning
+            If it replaces a wavelength refined or set by hand since the
+            last setter call, or a doublet set with ``set_xray_source``.
         """
         self._check_xray_radiation()
         self._check_wavelength_limits(kalpha1)
@@ -241,17 +307,34 @@ class ConstantWavelengthInstrument(Instrument):
                 f"{kalpha1} angstroms. Please give the wavelengths in the "
                 "order kalpha1, kalpha2."
             )
+        if kalpha2_ratio is None:
+            kalpha2_ratio = self._kalpha2_ratio
         mean_wavelength = kalpha1 + (kalpha2 - kalpha1) * kalpha2_ratio / (
             1 + kalpha2_ratio
+        )
+        if self._xray_source is not None:
+            warnings.warn(
+                "set_xray_wavelengths replaced the "
+                f"{self._xray_source} Kalpha1/Kalpha2 doublet with the "
+                f"explicit wavelengths. To use the {self._xray_source} "
+                "doublet again, call set_xray_source.",
+                UserWarning,
+                stacklevel=2,
+            )
+        self._warn_if_wavelength_replaced(
+            "set_xray_wavelengths", mean_wavelength
         )
         self._xray_source = None
         self._kalpha_wavelengths = (kalpha1, kalpha2)
         self._kalpha2_ratio = kalpha2_ratio
-        self.wavelength.set_value(mean_wavelength)
+        self._set_wavelength_value(mean_wavelength)
         self.mark_settings_changed()
 
     def set_polarization(self, polarization_rate):
         """Set the polarization rate of the x-ray beam.
+
+        ObjCryst only applies the rate to x-rays, so it has no effect
+        with neutrons or electrons.
 
         Parameters
         ----------
@@ -264,6 +347,11 @@ class ConstantWavelengthInstrument(Instrument):
         ------
         ValueError
             If the rate is outside [-1, 1].
+
+        Warns
+        -----
+        UserWarning
+            If the rate is not 0 and the radiation type is "N" or "E".
         """
         if not -1 <= polarization_rate <= 1:
             raise ValueError(
@@ -271,6 +359,9 @@ class ConstantWavelengthInstrument(Instrument):
                 "[-1, 1]. Please give ObjCryst's rate f; for a GSAS "
                 "polarization P, f = 2P - 1."
             )
+        self._warn_if_polarization_unused(
+            polarization_rate, self._radiation_type
+        )
         self._polarization_rate = polarization_rate
         self.mark_settings_changed()
 
@@ -339,6 +430,38 @@ class ConstantWavelengthInstrument(Instrument):
                 "set_wavelength, set_xray_source or set_xray_wavelengths."
             )
         Instrument._validate(self)
+
+    def _set_wavelength_value(self, wavelength):
+        self.wavelength.set_value(wavelength)
+        self._last_set_wavelength = wavelength
+
+    def _warn_if_wavelength_replaced(self, setter_name, new_wavelength):
+        current_wavelength = self.wavelength.value
+        if current_wavelength is None:
+            return
+        if current_wavelength == self._last_set_wavelength:
+            return
+        warnings.warn(
+            f"{setter_name} replaced the wavelength "
+            f"{current_wavelength:g} angstroms, which was refined or set "
+            f"by hand, with {new_wavelength:g} angstroms. To keep "
+            f"{current_wavelength:g} angstroms, set instrument.wavelength "
+            f"again after {setter_name}.",
+            UserWarning,
+            stacklevel=3,
+        )
+
+    def _warn_if_polarization_unused(self, polarization_rate, radiation_type):
+        if polarization_rate == 0 or radiation_type == "X":
+            return
+        warnings.warn(
+            f"The polarization rate {polarization_rate} has no effect with "
+            f"the radiation type '{radiation_type}', because ObjCryst only "
+            "applies it to x-rays. Please set a polarization rate only for "
+            "x-ray data.",
+            UserWarning,
+            stacklevel=3,
+        )
 
     def _check_xray_radiation(self):
         if self._radiation_type != "X":
