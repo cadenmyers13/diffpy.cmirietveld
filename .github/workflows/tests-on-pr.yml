@@ -11,5 +11,6 @@ jobs:
       project: diffpy.cmirietveld
       c_extension: false
       headless: false
+      run: python -m pip install git+https://github.com/diffpy/pyobjcryst.git@main --no-deps
     secrets:
       CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
