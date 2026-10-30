@@ -69,13 +69,19 @@ class GSASDataParser(PowderDataParser):
     The first line of the file is its title, and lines before the first
     ``BANK`` line, such as comments, are skipped. Each bank starts with a
     line ``BANK <number> <points> <records> CONST <start> <step> 0 0
-    STD``, with the start and step in centidegrees, and is followed by
-    its counts in fields of eight characters, ten to a line. Each field
-    holds the number of counters averaged (two characters, blank for
-    one) and the counts averaged over them (six characters), which are
-    the counts read. The x axis is 2theta in degrees. Only constant-step
-    STD banks are read. Files with CRLF line endings are read like files
-    with LF ones.
+    <format>``, with the start and step in centidegrees, and is followed
+    by its data in fields of eight characters, in one of two formats:
+
+    - ``STD``: the counts, ten to a line. Each field holds the number of
+      counters averaged (two characters, blank for one) and the counts
+      averaged over them (six characters), which are the counts read.
+      The uncertainties come from counting statistics.
+    - ``ESD``: the counts and their uncertainty, five points to a line,
+      read as they are.
+
+    The x axis is 2theta in degrees. Only constant-step STD and ESD banks
+    are read, and a file can mix the two. Files with CRLF line endings
+    are read like files with LF ones.
 
     Examples
     --------
@@ -90,11 +96,11 @@ class GSASDataParser(PowderDataParser):
     _format = "gsas"
 
     def _parse_metadata(self, filename):
-        """Return the metadata of a GSAS STD file."""
+        """Return the metadata of a GSAS powder data file."""
         raise NotImplementedError
 
     def _parse_data(self, filename, column_format=None, **kwargs):
-        """Append the banks of a GSAS STD file."""
+        """Append the STD and ESD banks of a GSAS powder data file."""
         raise NotImplementedError
 
 
