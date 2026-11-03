@@ -30,26 +30,14 @@ from pyobjcryst import ObjCrystException
 from pyobjcryst.crystal import Crystal, create_crystal_from_cif
 from pyobjcryst.powderpattern import PowderPattern
 
-from diffpy.cmirietveld.instruments import (
-    ConstantWavelengthInstrument,
-    Instrument,
-)
-from diffpy.cmirietveld.peak_profiles import PeakProfile, PseudoVoigtProfile
+from diffpy.cmirietveld.instruments import Instrument
+from diffpy.cmirietveld.peak_profiles import PeakProfile
 from diffpy.cmistructure import structure_to_parameter_set
 from diffpy.cmistructure.basestructureparset import BaseStructureParSet
 from diffpy.srfit.exceptions import SrFitError
 from diffpy.srfit.fitbase import ProfileGenerator
 
 PLACEHOLDER_TTH = np.linspace(5.0, 175.0, 1000)
-
-COMPONENT_STAGES = {
-    "instrument": (Instrument, "instrument", "ConstantWavelengthInstrument"),
-    "peak_profile": (
-        PeakProfile,
-        "peak profile",
-        "PseudoVoigtProfile or TCHProfile",
-    ),
-}
 
 
 class PowderDiffractionGenerator(ProfileGenerator):
@@ -60,9 +48,10 @@ class PowderDiffractionGenerator(ProfileGenerator):
     calculation: an intensity source, an instrument, zero or more
     intensity corrections and a peak profile. The Parameters of each
     component sit under its name, for example
-    ``generator.peak_profile.U`` and ``generator.instrument.zero``. With
-    nothing set, the generator uses a ``PseudoVoigtProfile`` and a
-    ``ConstantWavelengthInstrument``.
+    ``generator.peak_profile.U`` and ``generator.instrument.zero``. The
+    generator has no defaults: the structure, the instrument and the peak
+    profile are each set before a pattern is calculated, so a script
+    always shows which models it refines.
 
     The generator calculates the Bragg intensity only; a background is
     added in the FitContribution equation.
@@ -78,10 +67,10 @@ class PowderDiffractionGenerator(ProfileGenerator):
     ----------
     phase : ParameterSet or None
         The structure ParameterSet, or None until a structure is set.
-    peak_profile : PeakProfile
-        The peak profile component.
-    instrument : Instrument
-        The instrument component.
+    peak_profile : PeakProfile or None
+        The peak profile component, or None until one is set.
+    instrument : Instrument or None
+        The instrument component, or None until one is set.
 
     Managed Parameters
     ------------------
@@ -97,8 +86,8 @@ class PowderDiffractionGenerator(ProfileGenerator):
         self._last_tth = np.empty(0)
         self._installed_settings = {}
         self._new_parameter("scale", 1.0)
-        self.add_parameter_set(ConstantWavelengthInstrument())
-        self.add_parameter_set(PseudoVoigtProfile())
+        self.instrument = None
+        self.peak_profile = None
 
     def set_structure(self, structure, name=None):
         """Set the structure used to calculate the pattern.
@@ -225,7 +214,12 @@ class PowderDiffractionGenerator(ProfileGenerator):
             fit recipe or constrained in one, since the recipe would refine
             a Parameter that no longer changes the pattern.
         """
-        self._set_component("peak_profile", peak_profile)
+        self._set_component(
+            "peak_profile",
+            peak_profile,
+            PeakProfile,
+            "PseudoVoigtProfile or TCHProfile",
+        )
 
     def set_instrument(self, instrument):
         """Set the instrument component.
@@ -251,7 +245,12 @@ class PowderDiffractionGenerator(ProfileGenerator):
             fit recipe or constrained in one, since the recipe would refine
             a Parameter that no longer changes the pattern.
         """
-        self._set_component("instrument", instrument)
+        self._set_component(
+            "instrument",
+            instrument,
+            Instrument,
+            "ConstantWavelengthInstrument",
+        )
 
     def add_intensity_correction(self, correction):
         """Add an intensity correction component.
@@ -283,6 +282,57 @@ class PowderDiffractionGenerator(ProfileGenerator):
         """
         raise NotImplementedError
 
+    def print_info(self):
+        """Print what the generator holds.
+
+        The scale is printed first, then the structure, the instrument
+        and the peak profile, each under the name its Parameters sit
+        under, so a user can check a setup before refining it. The
+        structure shows its space group and lattice parameters, with the
+        angles in degrees, rather than all its Parameters. Each
+        component shows its type, then its settings from
+        ``get_settings`` on one line if it has any, then the current
+        value of each of its Parameters. Anything that isn't set yet
+        shows "not set".
+        """
+        lines = [
+            f"PowderDiffractionGenerator '{self.name}'",
+            f"  scale = {_format_value(self.scale.value)}",
+        ]
+        if self.phase is None:
+            lines.append("  phase: not set")
+        else:
+            crystal = self.phase.structure
+            lines.append(
+                f"  {self.phase.name}: Crystal '{crystal.GetName()}', "
+                f"space group {crystal.GetSpaceGroup().GetName()}"
+            )
+            for length_name in ["a", "b", "c"]:
+                length = self.phase.get(length_name).value
+                lines.append(f"    {length_name} = {_format_value(length)}")
+            for angle_name in ["alpha", "beta", "gamma"]:
+                angle = np.degrees(self.phase.get(angle_name).value)
+                lines.append(f"    {angle_name} = {_format_value(angle)}")
+        components = {
+            "instrument": self.instrument,
+            "peak_profile": self.peak_profile,
+        }
+        for component_name, component in components.items():
+            if component is None:
+                lines.append(f"  {component_name}: not set")
+                continue
+            lines.append(f"  {component_name}: {type(component).__name__}")
+            settings = []
+            for setting_name, value in component.get_settings().items():
+                settings.append(f"{setting_name} = {_format_value(value)}")
+            if settings:
+                lines.append(f"    settings: {', '.join(settings)}")
+            for parameter in component.iterate_over_parameters():
+                lines.append(
+                    f"    {parameter.name} = {_format_value(parameter.value)}"
+                )
+        print("\n".join(lines))
+
     def __call__(self, tth):
         """Calculate the Bragg intensity.
 
@@ -305,13 +355,14 @@ class PowderDiffractionGenerator(ProfileGenerator):
         Raises
         ------
         SrFitError
-            If no structure is set, or the instrument has no wavelength.
+            If no structure, instrument or peak profile is set, or the
+            instrument has no wavelength.
         ValueError
             If a component's Parameter value is outside the limits of its
             ObjCryst ``RefinablePar``.
         """
-        self._check_structure()
-        components = [self.get(stage_name) for stage_name in COMPONENT_STAGES]
+        self._check_setup()
+        components = [self.instrument, self.peak_profile]
         for component in components:
             component._validate()
         if not np.array_equal(tth, self._last_tth):
@@ -337,14 +388,25 @@ class PowderDiffractionGenerator(ProfileGenerator):
         return bragg_intensity
 
     def _validate(self):
-        self._check_structure()
+        self._check_setup()
         ProfileGenerator._validate(self)
 
-    def _check_structure(self):
+    def _check_setup(self):
         if self.phase is None:
             raise SrFitError(
                 "The generator has no structure. Please set one with "
                 "set_structure or set_structure_from_parset."
+            )
+        if self.instrument is None:
+            raise SrFitError(
+                "The generator has no instrument. Please set one with "
+                "set_instrument, such as a ConstantWavelengthInstrument."
+            )
+        if self.peak_profile is None:
+            raise SrFitError(
+                "The generator has no peak profile. Please set one with "
+                "set_peak_profile, such as a PseudoVoigtProfile or a "
+                "TCHProfile."
             )
 
     def _replace_phase(self, phase, setter_name):
@@ -361,9 +423,9 @@ class PowderDiffractionGenerator(ProfileGenerator):
         self._installed_settings = {}
         self._flush(other=(self,))
 
-    def _set_component(self, stage_name, component):
-        base_class, kind, examples = COMPONENT_STAGES[stage_name]
-        setter_name = f"set_{stage_name}"
+    def _set_component(self, component_name, component, base_class, examples):
+        setter_name = f"set_{component_name}"
+        kind = component_name.replace("_", " ")
         if not isinstance(component, base_class):
             given_name = type(component).__name__
             raise ValueError(
@@ -372,9 +434,11 @@ class PowderDiffractionGenerator(ProfileGenerator):
                 f"Please give {_get_article(base_class.__name__)} "
                 f"{base_class.__name__}, such as {examples}."
             )
-        old_component = self.get(stage_name)
-        _warn_if_parameters_used(old_component, setter_name, kind)
-        self.remove_parameter_set(old_component)
+        old_component = getattr(self, component_name)
+        if old_component is not None:
+            _warn_if_parameters_used(old_component, setter_name, kind)
+            self.remove_parameter_set(old_component)
+        setattr(self, component_name, component)
         self.add_parameter_set(component)
         self._flush(other=(self,))
 
@@ -416,6 +480,16 @@ def _warn_if_parameters_used(parameter_set, setter_name, kind):
         UserWarning,
         stacklevel=4,
     )
+
+
+def _format_value(value):
+    if value is None:
+        formatted_value = "not set"
+    elif isinstance(value, str):
+        formatted_value = value
+    else:
+        formatted_value = f"{value:g}"
+    return formatted_value
 
 
 def _get_article(word):

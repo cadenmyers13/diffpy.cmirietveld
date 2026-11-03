@@ -24,23 +24,23 @@ from diffpy.structure import load_structure
 
 def test_init():
     # Test a new generator before anything is set
-    # Expected: It is named bragg, has no structure, uses a pseudo-Voigt
-    # peak profile and a constant-wavelength instrument, and its scale is 1.
+    # Expected: It is named bragg, has no structure, no instrument and no
+    # peak profile, since a user chooses each of them, and its scale is 1.
     generator = PowderDiffractionGenerator()
     actual_name = generator.name
     actual_phase = generator.phase
-    actual_peak_profile_type = type(generator.peak_profile)
-    actual_instrument_type = type(generator.instrument)
+    actual_instrument = generator.instrument
+    actual_peak_profile = generator.peak_profile
     actual_scale = generator.scale.value
     expected_name = "bragg"
     expected_phase = None
-    expected_peak_profile_type = PseudoVoigtProfile
-    expected_instrument_type = ConstantWavelengthInstrument
+    expected_instrument = None
+    expected_peak_profile = None
     expected_scale = 1.0
     assert actual_name == expected_name
     assert actual_phase == expected_phase
-    assert actual_peak_profile_type == expected_peak_profile_type
-    assert actual_instrument_type == expected_instrument_type
+    assert actual_instrument == expected_instrument
+    assert actual_peak_profile == expected_peak_profile
     assert actual_scale == expected_scale
 
 
@@ -89,7 +89,10 @@ def test_set_structure_with_crystal(set_structure_kwargs, expected_phase_name):
 def test_set_structure_with_cif_path(pbso4_pattern, cif_path):
     generator = PowderDiffractionGenerator()
     generator.set_structure(cif_path)
-    generator.instrument.set_wavelength(1.5406)
+    instrument = ConstantWavelengthInstrument()
+    instrument.set_wavelength(1.5406)
+    generator.set_instrument(instrument)
+    generator.set_peak_profile(PseudoVoigtProfile())
     actual_structure_type = type(generator.phase.structure)
     actual_pattern = generator(pbso4_pattern.tth)
     expected_structure_type = Crystal
@@ -104,13 +107,18 @@ def test_call_with_cif_path_given_to_two_generators(pbso4_pattern):
     # parameter a of one is set to 8.50 angstroms, the other's pattern is
     # still plain pyobjcryst's for the CIF. Sharing one structure needs one
     # ParameterSet given to both generators.
-    # Give two generators the same path
+    # Give two generators the same path, instrument and peak profile
     generator = PowderDiffractionGenerator()
     other_generator = PowderDiffractionGenerator()
     generator.set_structure(PBSO4_CIF)
     other_generator.set_structure(PBSO4_CIF)
-    generator.instrument.set_wavelength(1.5406)
-    other_generator.instrument.set_wavelength(1.5406)
+    instrument = ConstantWavelengthInstrument()
+    instrument.set_wavelength(1.5406)
+    peak_profile = PseudoVoigtProfile()
+    generator.set_instrument(instrument)
+    other_generator.set_instrument(instrument)
+    generator.set_peak_profile(peak_profile)
+    other_generator.set_peak_profile(peak_profile)
     # Change a on the first generator only
     generator.phase.a.set_value(8.50)
     actual_other_pattern = other_generator(pbso4_pattern.tth)
@@ -234,7 +242,10 @@ def test_call_after_set_structure_twice(pbso4_pattern):
     first_crystal = create_crystal_from_cif(str(PBSO4_CIF))
     first_crystal.GetPar("a").SetHumanValue(8.50)
     generator.set_structure(first_crystal)
-    generator.instrument.set_wavelength(1.5406)
+    instrument = ConstantWavelengthInstrument()
+    instrument.set_wavelength(1.5406)
+    generator.set_instrument(instrument)
+    generator.set_peak_profile(PseudoVoigtProfile())
     generator(pbso4_pattern.tth)
     # Replace it with the CIF's structure and calculate again
     second_crystal = create_crystal_from_cif(str(PBSO4_CIF))
@@ -263,11 +274,12 @@ def test_get_after_set_structure_with_new_name(pbso4_generator):
     assert actual_new_phase == expected_new_phase
 
 
-def test_call_with_default_components(pbso4_generator, pbso4_pattern):
-    # Test calculating a pattern with the default peak profile and
-    # instrument
+def test_call_with_pseudo_voigt_profile(pbso4_generator, pbso4_pattern):
+    # Test calculating a pattern with a pseudo-Voigt peak profile and a
+    # constant-wavelength instrument
     # Expected: The pattern equals the one plain pyobjcryst calculates for
-    # the same structure, grid and wavelength.
+    # the same structure, grid and wavelength, whose own default profile is
+    # pseudo-Voigt.
     actual_pattern = pbso4_generator(pbso4_pattern.tth)
     expected_pattern = pbso4_pattern.calculate()
     assert np.allclose(actual_pattern, expected_pattern)
@@ -346,18 +358,21 @@ def test_call_after_set_peak_profile(
     assert np.allclose(actual_pattern, expected_pattern)
 
 
-def test_call_after_set_peak_profile_before_set_structure(pbso4_pattern):
-    # Test setting up the peak profile before the structure, as a user may
-    # do at the top of a script
+def test_call_after_set_components_before_set_structure(pbso4_pattern):
+    # Test setting up the instrument and the peak profile before the
+    # structure, as a user may do at the top of a script
     # Expected: The pattern equals plain pyobjcryst's with a TCH profile,
-    # because the profile is installed once the structure is set.
-    # Set the profile first, then the structure and the wavelength
+    # because the instrument and the profile are installed once the
+    # structure is set.
+    # Set the instrument and the profile first, then the structure
     generator = PowderDiffractionGenerator()
+    instrument = ConstantWavelengthInstrument()
+    instrument.set_wavelength(1.5406)
+    generator.set_instrument(instrument)
     tch_profile = TCHProfile()
     tch_profile.X.set_value(0.02)
     generator.set_peak_profile(tch_profile)
     generator.set_structure(create_crystal_from_cif(str(PBSO4_CIF)))
-    generator.instrument.set_wavelength(1.5406)
     actual_pattern = generator(pbso4_pattern.tth)
     # Install the same profile directly in pyobjcryst
     pbso4_pattern.diffraction.SetProfile(ReflectionProfilePseudoVoigtTCH())
@@ -568,7 +583,8 @@ def test_call_with_shared_structure(pbso4_pattern):
     # does to refine one structure against two datasets
     # Expected: After the lattice parameter a is set to 8.50 angstroms,
     # both patterns equal plain pyobjcryst's with a = 8.50 angstroms.
-    # Give two generators the same structure and calculate once
+    # Give two generators the same structure, instrument and peak profile,
+    # and calculate once
     shared_phase = structure_to_parameter_set(
         "phase", create_crystal_from_cif(str(PBSO4_CIF))
     )
@@ -576,8 +592,13 @@ def test_call_with_shared_structure(pbso4_pattern):
     other_generator = PowderDiffractionGenerator()
     generator.set_structure(shared_phase)
     other_generator.set_structure(shared_phase)
-    generator.instrument.set_wavelength(1.5406)
-    other_generator.instrument.set_wavelength(1.5406)
+    instrument = ConstantWavelengthInstrument()
+    instrument.set_wavelength(1.5406)
+    peak_profile = PseudoVoigtProfile()
+    generator.set_instrument(instrument)
+    other_generator.set_instrument(instrument)
+    generator.set_peak_profile(peak_profile)
+    other_generator.set_peak_profile(peak_profile)
     generator(pbso4_pattern.tth)
     other_generator(pbso4_pattern.tth)
     # Change a once and calculate both again
@@ -774,8 +795,12 @@ def test_call_before_set_structure(pbso4_pattern):
     # Test calculating a pattern before a structure is set
     # Expected: An SrFitError says that the structure is missing and how to
     # set it.
+    # Set everything but the structure
     generator = PowderDiffractionGenerator()
-    generator.instrument.set_wavelength(1.5406)
+    instrument = ConstantWavelengthInstrument()
+    instrument.set_wavelength(1.5406)
+    generator.set_instrument(instrument)
+    generator.set_peak_profile(PseudoVoigtProfile())
     expected_msg = (
         "The generator has no structure. Please set one with "
         "set_structure or set_structure_from_parset."
@@ -784,12 +809,141 @@ def test_call_before_set_structure(pbso4_pattern):
         generator(pbso4_pattern.tth)
 
 
+def test_call_before_set_instrument(pbso4_pattern):
+    # Test calculating a pattern before an instrument is set, as when a user
+    # forgets it in their script
+    # Expected: An SrFitError says that the instrument is missing and how to
+    # set it.
+    # Set everything but the instrument
+    generator = PowderDiffractionGenerator()
+    generator.set_structure(create_crystal_from_cif(str(PBSO4_CIF)))
+    generator.set_peak_profile(PseudoVoigtProfile())
+    expected_msg = (
+        "The generator has no instrument. Please set one with "
+        "set_instrument, such as a ConstantWavelengthInstrument."
+    )
+    with pytest.raises(SrFitError, match=re.escape(expected_msg)):
+        generator(pbso4_pattern.tth)
+
+
+def test_call_before_set_peak_profile(pbso4_pattern):
+    # Test calculating a pattern before a peak profile is set, as when a
+    # user forgets it in their script
+    # Expected: An SrFitError says that the peak profile is missing and how
+    # to set it.
+    # Set everything but the peak profile
+    generator = PowderDiffractionGenerator()
+    generator.set_structure(create_crystal_from_cif(str(PBSO4_CIF)))
+    instrument = ConstantWavelengthInstrument()
+    instrument.set_wavelength(1.5406)
+    generator.set_instrument(instrument)
+    expected_msg = (
+        "The generator has no peak profile. Please set one with "
+        "set_peak_profile, such as a PseudoVoigtProfile or a TCHProfile."
+    )
+    with pytest.raises(SrFitError, match=re.escape(expected_msg)):
+        generator(pbso4_pattern.tth)
+
+
+def test_residual_before_set_structure(pbso4_pattern):
+    # Test starting a fit with a generator that has no structure
+    # Expected: The recipe's first residual raises the same SrFitError as
+    # calculating the pattern, before anything is calculated.
+    # Set everything but the structure, and build a recipe on the generator
+    generator = PowderDiffractionGenerator()
+    instrument = ConstantWavelengthInstrument()
+    instrument.set_wavelength(1.5406)
+    generator.set_instrument(instrument)
+    generator.set_peak_profile(PseudoVoigtProfile())
+    profile = Profile()
+    profile.set_observed_profile(
+        pbso4_pattern.tth, np.zeros_like(pbso4_pattern.tth)
+    )
+    contribution = FitContribution("xray")
+    contribution.set_profile(profile)
+    contribution.add_profile_generator(generator)
+    contribution.set_equation("bragg")
+    recipe = FitRecipe()
+    recipe.add_contribution(contribution)
+    recipe.add_variable(generator.scale)
+    # Start the fit
+    expected_msg = (
+        "The generator has no structure. Please set one with "
+        "set_structure or set_structure_from_parset."
+    )
+    with pytest.raises(SrFitError, match=re.escape(expected_msg)):
+        recipe.residual()
+
+
+def test_residual_before_set_instrument(pbso4_pattern):
+    # Test starting a fit with a generator that has no instrument
+    # Expected: The recipe's first residual raises the same SrFitError as
+    # calculating the pattern, before anything is calculated.
+    # Set everything but the instrument, and build a recipe on the
+    # generator
+    generator = PowderDiffractionGenerator()
+    generator.set_structure(create_crystal_from_cif(str(PBSO4_CIF)))
+    generator.set_peak_profile(PseudoVoigtProfile())
+    profile = Profile()
+    profile.set_observed_profile(
+        pbso4_pattern.tth, np.zeros_like(pbso4_pattern.tth)
+    )
+    contribution = FitContribution("xray")
+    contribution.set_profile(profile)
+    contribution.add_profile_generator(generator)
+    contribution.set_equation("bragg")
+    recipe = FitRecipe()
+    recipe.add_contribution(contribution)
+    recipe.add_variable(generator.scale)
+    # Start the fit
+    expected_msg = (
+        "The generator has no instrument. Please set one with "
+        "set_instrument, such as a ConstantWavelengthInstrument."
+    )
+    with pytest.raises(SrFitError, match=re.escape(expected_msg)):
+        recipe.residual()
+
+
+def test_residual_before_set_peak_profile(pbso4_pattern):
+    # Test starting a fit with a generator that has no peak profile
+    # Expected: The recipe's first residual raises the same SrFitError as
+    # calculating the pattern, before anything is calculated.
+    # Set everything but the peak profile, and build a recipe on the
+    # generator
+    generator = PowderDiffractionGenerator()
+    generator.set_structure(create_crystal_from_cif(str(PBSO4_CIF)))
+    instrument = ConstantWavelengthInstrument()
+    instrument.set_wavelength(1.5406)
+    generator.set_instrument(instrument)
+    profile = Profile()
+    profile.set_observed_profile(
+        pbso4_pattern.tth, np.zeros_like(pbso4_pattern.tth)
+    )
+    contribution = FitContribution("xray")
+    contribution.set_profile(profile)
+    contribution.add_profile_generator(generator)
+    contribution.set_equation("bragg")
+    recipe = FitRecipe()
+    recipe.add_contribution(contribution)
+    recipe.add_variable(generator.scale)
+    # Start the fit
+    expected_msg = (
+        "The generator has no peak profile. Please set one with "
+        "set_peak_profile, such as a PseudoVoigtProfile or a TCHProfile."
+    )
+    with pytest.raises(SrFitError, match=re.escape(expected_msg)):
+        recipe.residual()
+
+
 def test_call_before_set_wavelength(pbso4_pattern):
     # Test calculating a pattern before the instrument has a wavelength
     # Expected: An SrFitError says that the wavelength is missing and how to
     # set it.
+    # Set everything, with an instrument that has no wavelength
     generator = PowderDiffractionGenerator()
     generator.set_structure(create_crystal_from_cif(str(PBSO4_CIF)))
+    generator.set_instrument(ConstantWavelengthInstrument())
+    generator.set_peak_profile(PseudoVoigtProfile())
     expected_msg = (
         "The instrument has no wavelength. Please set one with "
         "set_wavelength, set_xray_source or set_xray_wavelengths."
@@ -942,3 +1096,70 @@ def test_set_structure_without_recipe_variables(
     with warnings.catch_warnings():
         warnings.simplefilter("error", UserWarning)
         pbso4_generator.set_structure(create_crystal_from_cif(str(PBSO4_CIF)))
+
+
+def test_print_info(pbso4_generator, capsys):
+    # Test printing what a fully set up generator holds, as a user does to
+    # check their setup before refining
+    # Expected: The scale, then the structure, the instrument and the peak
+    # profile under the names their Parameters sit under. The structure
+    # shows its space group and lattice parameters, with the angles in
+    # degrees. Each component shows its type, then its settings, if it
+    # has any, on one line, then its Parameter values.
+    pbso4_generator.print_info()
+    actual_info = capsys.readouterr().out
+    expected_info = (
+        "PowderDiffractionGenerator 'bragg'\n"
+        "  scale = 1\n"
+        "  phase: Crystal 'O4 Pb S', space group P n m a\n"
+        "    a = 8.48\n"
+        "    b = 5.398\n"
+        "    c = 6.958\n"
+        "    alpha = 90\n"
+        "    beta = 90\n"
+        "    gamma = 90\n"
+        "  instrument: ConstantWavelengthInstrument\n"
+        "    settings: radiation_type = X, polarization_rate = 0\n"
+        "    zero = 0\n"
+        "    displacement = 0\n"
+        "    transparency = 0\n"
+        "    mu_r = 0\n"
+        "    wavelength = 1.5406\n"
+        "  peak_profile: PseudoVoigtProfile\n"
+        "    U = 0\n"
+        "    V = 0\n"
+        "    W = 0.01\n"
+        "    eta0 = 0.5\n"
+        "    eta1 = 0\n"
+        "    asym0 = 1\n"
+        "    asym1 = 0\n"
+        "    asym2 = 0\n"
+    )
+    assert actual_info == expected_info
+
+
+def test_print_info_before_setup_is_complete(capsys):
+    # Test printing what a generator holds while a user is still setting it
+    # up
+    # Expected: The structure and the peak profile, which aren't set, show
+    # "not set", and so does the wavelength of the instrument, which has no
+    # wavelength yet.
+    # Set only an instrument, without a wavelength
+    generator = PowderDiffractionGenerator()
+    generator.set_instrument(ConstantWavelengthInstrument())
+    generator.print_info()
+    actual_info = capsys.readouterr().out
+    expected_info = (
+        "PowderDiffractionGenerator 'bragg'\n"
+        "  scale = 1\n"
+        "  phase: not set\n"
+        "  instrument: ConstantWavelengthInstrument\n"
+        "    settings: radiation_type = X, polarization_rate = 0\n"
+        "    zero = 0\n"
+        "    displacement = 0\n"
+        "    transparency = 0\n"
+        "    mu_r = 0\n"
+        "    wavelength = not set\n"
+        "  peak_profile: not set\n"
+    )
+    assert actual_info == expected_info

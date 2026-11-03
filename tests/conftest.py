@@ -11,7 +11,8 @@ from pyobjcryst.reflectionprofile import (
 )
 
 from diffpy.cmirietveld.component import Component
-from diffpy.cmirietveld.peak_profiles import PeakProfile
+from diffpy.cmirietveld.instruments import ConstantWavelengthInstrument
+from diffpy.cmirietveld.peak_profiles import PeakProfile, PseudoVoigtProfile
 from diffpy.cmirietveld.powderdiffractiongenerator import (
     PowderDiffractionGenerator,
 )
@@ -107,7 +108,10 @@ def other_pbso4_pattern():
 def pbso4_generator():
     pbso4_generator = PowderDiffractionGenerator()
     pbso4_generator.set_structure(create_crystal_from_cif(str(PBSO4_CIF)))
-    pbso4_generator.instrument.set_wavelength(1.5406)
+    instrument = ConstantWavelengthInstrument()
+    instrument.set_wavelength(1.5406)
+    pbso4_generator.set_instrument(instrument)
+    pbso4_generator.set_peak_profile(PseudoVoigtProfile())
     return pbso4_generator
 
 
@@ -117,7 +121,10 @@ def other_pbso4_generator():
     other_pbso4_generator.set_structure(
         create_crystal_from_cif(str(PBSO4_CIF))
     )
-    other_pbso4_generator.instrument.set_wavelength(1.5406)
+    instrument = ConstantWavelengthInstrument()
+    instrument.set_wavelength(1.5406)
+    other_pbso4_generator.set_instrument(instrument)
+    other_pbso4_generator.set_peak_profile(PseudoVoigtProfile())
     return other_pbso4_generator
 
 
