@@ -66,7 +66,7 @@ def make_recipe(data_file, cif_file):
     background.plot_fit()
     instrument = ConstantWavelengthInstrument()
     instrument.set_xray_source("Cu")
-    instrument.set_polarization(0.9)
+    instrument.set_polarization(0.4)
     generator = PowderDiffractionGenerator("bragg")
     generator.set_structure(cif_file, name="PbSO4")
     generator.set_instrument(instrument)
