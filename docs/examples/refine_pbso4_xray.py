@@ -24,7 +24,7 @@ from diffpy.srfit import (
     Profile,
 )
 
-TESTDATA_DIR = Path(__file__).parent / "tests" / "testdata"
+TESTDATA_DIR = Path(__file__).parents[2] / "tests" / "testdata"
 DATA_FILE = TESTDATA_DIR / "PBSO4.XRA"
 CIF_FILE = TESTDATA_DIR / "PbSO4-Wyckoff.cif"
 STAGES = [
